@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>삼성전자 주가 대시보드</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- PapaParse (CSV Parser) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#0e2bdc', // 삼성 블루 컬러
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* 커스텀 스크롤바 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen">
+
+    <!-- 헤더 -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <i data-lucide="trending-up" class="text-primary w-6 h-6"></i>
+                <h1 class="text-xl font-bold text-primary">삼성전자 주가 대시보드</h1>
+            </div>
+            <div class="text-sm text-slate-500 flex items-center gap-1">
+                <i data-lucide="clock" class="w-4 h-4"></i>
+                <span id="lastUpdated">업데이트 중...</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        <!-- 로딩 표시 -->
+        <div id="loading" class="flex flex-col items-center justify-center py-20">
+            <i data-lucide="loader-2" class="w-10 h-10 text-primary animate-spin mb-4"></i>
+            <p class="text-slate-500">데이터를 불러오는 중입니다...</p>
+        </div>
+
+        <!-- 에러 메시지 -->
+        <div id="error-message" class="hidden bg-red-50 border border-red-200 text-red-600 rounded-lg p-4 mb-6 flex items-center gap-3">
+            <i data-lucide="alert-circle" class="w-5 h-5 flex-shrink-0"></i>
+            <p id="error-text">데이터를 불러오는데 실패했습니다.</p>
+        </div>
+
+        <!-- 대시보드 콘텐츠 -->
+        <div id="dashboard-content" class="hidden space-y-6">
+            
+            <!-- 요약 카드 그리드 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                <!-- 현재가 -->
+                <div class="bg-white rounded-xl border border-slate-200 p-5 shadow-sm transition-shadow hover:shadow-md">
+                    <div class="flex items-center justify-between mb-2">
+                        <p class="text-sm font-medium text-slate-500">현재가 (최근 종가)</p>
+                        <div class="p-2 bg-red-50 rounded-lg"><i data-lucide="won-sign" class="w-4 h-4 text-red-600"></i></div>
+                    </div>
+                    <!-- 숫자를 빨간색으로 강조 -->
+                    <p class="text-2xl font-bold text-red-600" id="currentPrice">-</p>
+                </div>
+
+                <!-- 최고가 -->
+                <div class="bg-white rounded-xl border border-slate-200 p-5 shadow-sm transition-shadow hover:shadow-md">
+                    <div class="flex items-center justify-between mb-2">
+                        <p class="text-sm font-medium text-slate-500">최고가 (전체)</p>
+                        <div class="p-2 bg-red-50 rounded-lg"><i data-lucide="arrow-up-circle" class="w-4 h-4 text-red-500"></i></div>
+                    </div>
+                    <p class="text-2xl font-bold text-slate-900" id="highPrice">-</p>
+                </div>
+
+                <!-- 최저가 -->
+                <div class="bg-white rounded-xl border border-slate-200 p-5 shadow-sm transition-shadow hover:shadow-md">
+                    <div class="flex items-center justify-between mb-2">
+                        <p class="text-sm font-medium text-slate-500">최저가 (전체)</p>
+                        <div class="p-2 bg-blue-50 rounded-lg"><i data-lucide="arrow-down-circle" class="w-4 h-4 text-blue-500"></i></div>
+                    </div>
+                    <p class="text-2xl font-bold text-slate-900" id="lowPrice">-</p>
+                </div>
+
+                <!-- 평균가 -->
+                <div class="bg-white rounded-xl border border-slate-200 p-5 shadow-sm transition-shadow hover:shadow-md">
+                    <div class="flex items-center justify-between mb-2">
+                        <p class="text-sm font-medium text-slate-500">평균가 (전체)</p>
+                        <div class="p-2 bg-slate-100 rounded-lg"><i data-lucide="bar-chart-2" class="w-4 h-4 text-slate-600"></i></div>
+                    </div>
+                    <p class="text-2xl font-bold text-slate-900" id="avgPrice">-</p>
+                </div>
+
+                <!-- 30일 변동률 -->
+                <div class="bg-white rounded-xl border border-slate-200 p-5 shadow-sm transition-shadow hover:shadow-md">
+                    <div class="flex items-center justify-between mb-2">
+                        <p class="text-sm font-medium text-slate-500">최근 30일 변동률</p>
+                        <div class="p-2 bg-slate-100 rounded-lg" id="changeIconBg">
+                            <i data-lucide="activity" class="w-4 h-4 text-slate-600" id="changeIcon"></i>
+                        </div>
+                    </div>
+                    <div class="flex items-baseline gap-2">
+                        <p class="text-2xl font-bold" id="changeRate">-</p>
+                        <span class="text-sm" id="changeAmount"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- 메인 차트 -->
+                <div class="bg-white rounded-xl border border-slate-200 p-5 shadow-sm lg:col-span-2">
+                    <h2 class="text-lg font-bold text-slate-800 mb-4">일별 종가 추이</h2>
+                    <div class="relative h-80 w-full">
+                        <canvas id="stockChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- 데이터 테이블 -->
+                <div class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col h-[400px]">
+                    <div class="p-5 border-b border-slate-100">
+                        <h2 class="text-lg font-bold text-slate-800">최근 거래 데이터</h2>
+                    </div>
+                    <div class="overflow-y-auto flex-1 p-0">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-10">
+                                <tr>
+                                    <th scope="col" class="px-5 py-3 font-medium">날짜 (Date)</th>
+                                    <th scope="col" class="px-5 py-3 font-medium text-right">종가 (Close)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableBody" class="divide-y divide-slate-100">
+                                <!-- 테이블 로우 동적 생성 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <script>
+        // Lucide 아이콘 초기화
+        lucide.createIcons();
+
+        // CSV 데이터 URL
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS3FVDajfBr4MDuwAM9TVWQuwkCfZhIuVpEDstoOG_MkPG_0tqUF-Sc2v7P5R2qhL9ON9yYNuN1OsMm/pub?gid=0&single=true&output=csv';
+
+        // 숫자 포맷팅 유틸리티 (ex: 75,000)
+        const formatNumber = (num) => {
+            return new Intl.NumberFormat('ko-KR').format(Math.round(num));
+        };
+
+        // 통화 포맷팅 유틸리티 (ex: ₩75,000)
+        const formatCurrency = (num) => {
+            return `₩${formatNumber(num)}`;
+        };
+
+        // 데이터 로드 및 처리
+        document.addEventListener('DOMContentLoaded', () => {
+            Papa.parse(CSV_URL, {
+                download: true,
+                header: true,
+                dynamicTyping: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    try {
+                        // 유효한 데이터만 필터링 (Date, Close 컬럼이 존재하는지 확인)
+                        const validData = results.data.filter(row => 
+                            (row.Date || row['날짜']) && (row.Close || row['종가'] || row.Close === 0)
+                        );
+
+                        if (validData.length === 0) {
+                            throw new Error("유효한 데이터가 없습니다. CSV 컬럼명(Date, Close)을 확인해주세요.");
+                        }
+
+                        // 날짜순으로 정렬 (오름차순: 과거 -> 최신)
+                        validData.sort((a, b) => {
+                            const dateA = new Date(a.Date || a['날짜']);
+                            const dateB = new Date(b.Date || b['날짜']);
+                            return dateA - dateB;
+                        });
+
+                        processData(validData);
+                        
+                        // UI 상태 업데이트
+                        document.getElementById('loading').classList.add('hidden');
+                        document.getElementById('dashboard-content').classList.remove('hidden');
+                        
+                        // 업데이트 시간 갱신
+                        const now = new Date();
+                        document.getElementById('lastUpdated').innerText = `최근 업데이트: ${now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`;
+                    } catch (error) {
+                        showError(error.message);
+                    }
+                },
+                error: function(error) {
+                    showError("CSV 파일을 불러오는 중 네트워크 오류가 발생했습니다.");
+                }
+            });
+        });
+
+        function showError(message) {
+            document.getElementById('loading').classList.add('hidden');
+            const errorEl = document.getElementById('error-message');
+            errorEl.classList.remove('hidden');
+            document.getElementById('error-text').innerText = message;
+        }
+
+        function processData(data) {
+            const dates = data.map(row => row.Date || row['날짜']);
+            // 숫자 형식에 콤마가 포함되어 있을 수 있으므로 처리
+            const prices = data.map(row => {
+                let val = row.Close || row['종가'];
+                if (typeof val === 'string') val = val.replace(/,/g, '');
+                return parseFloat(val);
+            });
+
+            // 1. 요약 카드 계산
+            const currentPrice = prices[prices.length - 1];
+            const maxPrice = Math.max(...prices);
+            const minPrice = Math.min(...prices);
+            const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
+
+            // 30일 변동률 계산 (데이터가 30개 미만일 경우 처리)
+            const daysToLookBack = Math.min(30, prices.length - 1);
+            const pastPrice = prices[prices.length - 1 - daysToLookBack];
+            const changeRate = ((currentPrice - pastPrice) / pastPrice) * 100;
+            const changeAmount = currentPrice - pastPrice;
+
+            // 요약 카드 UI 업데이트
+            document.getElementById('currentPrice').innerText = formatCurrency(currentPrice);
+            document.getElementById('highPrice').innerText = formatCurrency(maxPrice);
+            document.getElementById('lowPrice').innerText = formatCurrency(minPrice);
+            document.getElementById('avgPrice').innerText = formatCurrency(avgPrice);
+
+            const rateEl = document.getElementById('changeRate');
+            const amountEl = document.getElementById('changeAmount');
+            const iconBgEl = document.getElementById('changeIconBg');
+            
+            if (changeRate > 0) {
+                rateEl.innerText = `+${changeRate.toFixed(2)}%`;
+                rateEl.classList.add('text-red-500'); // 한국 주식은 상승이 빨간색
+                amountEl.innerText = `▲ ${formatNumber(changeAmount)}`;
+                amountEl.classList.add('text-red-500');
+                iconBgEl.classList.replace('bg-slate-100', 'bg-red-50');
+                iconBgEl.innerHTML = `<i data-lucide="trending-up" class="w-4 h-4 text-red-500"></i>`;
+            } else if (changeRate < 0) {
+                rateEl.innerText = `${changeRate.toFixed(2)}%`;
+                rateEl.classList.add('text-blue-500'); // 한국 주식은 하락이 파란색
+                amountEl.innerText = `▼ ${formatNumber(Math.abs(changeAmount))}`;
+                amountEl.classList.add('text-blue-500');
+                iconBgEl.classList.replace('bg-slate-100', 'bg-blue-50');
+                iconBgEl.innerHTML = `<i data-lucide="trending-down" class="w-4 h-4 text-blue-500"></i>`;
+            } else {
+                rateEl.innerText = `0.00%`;
+                rateEl.classList.add('text-slate-500');
+                amountEl.innerText = `-`;
+                amountEl.classList.add('text-slate-500');
+                iconBgEl.innerHTML = `<i data-lucide="minus" class="w-4 h-4 text-slate-500"></i>`;
+            }
+            lucide.createIcons(); // 동적으로 추가된 아이콘 렌더링
+
+            // 2. 차트 렌더링
+            renderChart(dates, prices);
+
+            // 3. 테이블 렌더링 (최신순으로 표시하기 위해 배열 복사 후 뒤집기)
+            renderTable([...data].reverse());
+        }
+
+        let stockChart = null;
+
+        function renderChart(dates, prices) {
+            const ctx = document.getElementById('stockChart').getContext('2d');
+            
+            // 기존 차트가 있다면 파괴 후 다시 생성
+            if (stockChart) {
+                stockChart.destroy();
+            }
+
+            // 차트 그라데이션 효과
+            const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+            gradient.addColorStop(0, 'rgba(14, 43, 220, 0.2)'); // 삼성 블루 투명
+            gradient.addColorStop(1, 'rgba(14, 43, 220, 0)');
+
+            stockChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        label: '종가 (₩)',
+                        data: prices,
+                        borderColor: '#0e2bdc',
+                        backgroundColor: gradient,
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        pointHoverRadius: 6,
+                        fill: true,
+                        tension: 0.1 // 곡선 부드럽게
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        intersect: false,
+                        mode: 'index',
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                            titleColor: '#0f172a',
+                            bodyColor: '#0f172a',
+                            borderColor: '#e2e8f0',
+                            borderWidth: 1,
+                            padding: 12,
+                            displayColors: false,
+                            callbacks: {
+                                label: function(context) {
+                                    return formatCurrency(context.parsed.y);
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: {
+                                display: false
+                            },
+                            ticks: {
+                                maxTicksLimit: 10,
+                                color: '#64748b'
+                            }
+                        },
+                        y: {
+                            border: {
+                                display: false
+                            },
+                            grid: {
+                                color: '#f1f5f9'
+                            },
+                            ticks: {
+                                callback: function(value) {
+                                    return new Intl.NumberFormat('ko-KR').format(value);
+                                },
+                                color: '#64748b'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderTable(data) {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+
+            data.forEach((row, index) => {
+                const date = row.Date || row['날짜'];
+                let price = row.Close || row['종가'];
+                if (typeof price === 'string') price = price.replace(/,/g, '');
+                
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-50 transition-colors duration-150';
+                
+                // 전일 대비 등락 색상 계산 (데이터가 최신순이므로 다음 인덱스(과거)와 비교)
+                let colorClass = 'text-slate-900';
+                if (index < data.length - 1) {
+                    let prevPrice = data[index + 1].Close || data[index + 1]['종가'];
+                    if (typeof prevPrice === 'string') prevPrice = prevPrice.replace(/,/g, '');
+                    
+                    const currentP = parseFloat(price);
+                    const prevP = parseFloat(prevPrice);
+                    
+                    if (currentP > prevP) colorClass = 'text-red-500 font-medium';
+                    else if (currentP < prevP) colorClass = 'text-blue-500 font-medium';
+                }
+
+                tr.innerHTML = `
+                    <td class="px-5 py-3 text-slate-600 whitespace-nowrap">${date}</td>
+                    <td class="px-5 py-3 text-right whitespace-nowrap ${colorClass}">
+                        ${formatCurrency(parseFloat(price))}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+    </script>
+</body>
+</html>
